@@ -1,0 +1,28 @@
+---
+title: "Taller I"
+date: "`r Sys.Date()`"
+author: "Lizeth Moreno, María Belén Rosero"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+---
+
+
+```{r knitr_init, echo=FALSE, cache=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=FALSE,
+	             cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+#Preguntas
+## Determine cuál es la fuente de variación más alta (entre todas las variables de la base de datos Data_Banco.xlsx) que afecta el tiempo de servicio.

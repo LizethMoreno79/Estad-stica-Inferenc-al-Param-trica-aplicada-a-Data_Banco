@@ -1,0 +1,321 @@
+---
+title: "Taller I"
+date: "`r Sys.Date()`"
+author: "Lizeth Moreno, María Belén Rosero"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+---
+
+
+```{r knitr_init, echo=FALSE, cache=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=FALSE,
+	             cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+#BASE DE DATOS
+En el presente taller se usará la base actualizada (data_banco(1)) donde se incluyen variables de las bases "Cajero" y "Sucursal"
+Nuevo_Sistema, Ubicación, Edad, Sexo, Nivel_Formación, Año.Ingreso y adicionalmente la variable Tiempo_Servicio_Seg en minutos como Tiempo_Servicio_Min.
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+source("Script/funciones.r")
+library(openxlsx)
+library(tidyverse) #carga muchos paquetes
+library(magrittr)
+data_banco<-read.xlsx("Base/Data_Banco (1).xlsx")
+View(data_banco)
+names(data_banco)
+str(data_banco)
+data_banco <- data_banco %>%
+  mutate( Monto= str_replace(Monto, pattern = ",", replacement = ".") ) %>%
+  mutate(Sucursal= as.character(Sucursal),
+         Cajero = as.character(Cajero),
+         Satisfaccion = parse_factor(Satisfaccion, 
+                                     levels= c('Muy Malo', 
+                                               'Malo', 
+                                               'Regular', 
+                                               'Bueno', 
+                                               'Muy Bueno'), ordered = T),
+         Monto= parse_number(Monto, locale = locale(decimal_mark = ".")))
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+data_banco<-data_banco %>% mutate(Tiempo_Servicio_Min= Tiempo_Servicio_seg/60)
+data_banco %>% transmute(Tiempo_Servicio_Min=Tiempo_Servicio_seg/60)
+
+```
+
+```{r message=TRUE}
+str(data_banco)
+```
+
+#Ejercicio 1
+## Determine cuál es la fuente de variación más alta (entre todas las variables de la base de datos Data_Banco.xlsx) que afecta el tiempo de servicio.
+-Necesitamos determinar cuan homogèneos o heterogéneos son los valores de nuestra variables, es decir, la dispersión , la variabilidad y la correlación de todas las variables con respecto a la variable tiempo de servicio.
+
+-Planteamos el problema con una notación y formalización
+
+```{r}
+data_cajero <- read.xlsx(xlsxFile = "Base/Data_Banco (1).xlsx", sheet = "Data_Cajero")
+data_cajero$Cajero <- as.numeric(data_cajero$Cajero)
+data_cajero$Edad <- as.numeric(data_cajero$Edad)
+
+X=data_banco$Tiempo_Servicio_Min
+Y=data_banco$Sucursal
+Z=data_banco$Cajero
+W=data_banco$ID_Transaccion
+A=data_banco$Transaccion
+B=data_banco$Satisfaccion
+C=data_banco$Monto 
+```
+
+Ahora realizamos un Análisis Exploratorio 
+
+####Unidimensional
+
+Se tiene una base de datos con 24299 registros correspondientes, con 14 variables, de las cuales se realiza un análisis de cada una con respecto al tiempo. Para iniciar el estudio en R obtenemos un resumen estadístico de las variables, como también su dispersión.
+
+```{r}
+library(MASS)
+attach(data_banco)
+summary(data_banco)
+
+
+```
+
+
+Así , de los 24299 registros , el promedio del tiempo de satisfacción es de 122.45min y el promedio de de sucursal es de 85. Para las medidas de posición podemos confirmar si se encuentran sesgado con el coeficiente de simetría y el de kurtosis para cada variable.
+
+```{r}
+library(timeDate)
+skewness(X, type=1)
+kurtosis(X, type=1)
+```
+
+En el caso de la variable tiempo de servicio la kurtosis nos indica que su distribución es màs apuntada que una normal..
+
+```{r}
+par(mfrow=c(1,2))
+hist(X)
+boxplot(X)
+title("Diagrama de caja para la variable X")
+
+```
+
+
+
+
+```{r}
+library(ggplot2)
+ggplot(data = data_banco, aes(x = data_banco$Tiempo_Servicio_seg, y = data_banco$Sucursal, color ="2")) +
+  geom_boxplot() +
+  theme_bw()
+```
+
+####Bidimensional
+
+Para el análisis exploratorio bidimensional primero calculamos el coeficiente de correlación para las variables tiempo de servicio y sucursal.
+```{r}
+data_banco %$%  cor(Tiempo_Servicio_seg, as.numeric(Monto))
+data_banco %$%  cor(Tiempo_Servicio_seg, as.numeric(Edad))
+data_banco %$%  cor(Tiempo_Servicio_seg, as.numeric(Año.Ingreso))
+
+```
+
+
+El coeficiente de correlación para la variable tiempo de servicio y Monto $0.5398951$ muestra una relación positiva y fuerte.
+
+El coeficiente de correlación para la variable tiemp de servicio con la variable Edad $0.02789692$ muestra que relación es positiva cercana a cero no mantienen  relación entre variables.
+
+El coeficiente de correlación para la variable tiempo de servicio y Año ingreso mantiene una relación negativa entre las variables.
+
+Con lo que se puede concluir que la variable Monto es la variable que posee mayor influencia en la variable tiempo de servici
+
+#### RESUMENES PARA DATOS AGRUPADOS
+ Calculamos la varianza entre las variables de la base de datos para analizar cuàl afecta el tiempo de servicio.
+```{r}
+
+
+data_banco %>% 
+  group_by(Transaccion, Satisfaccion,Nuevo_Sistema,Sexo, Cajero, Ubicación) %>%
+  summarise_at( vars(Tiempo_Servicio_seg), 
+                funs (
+                  MEDIA= mean(., na.rm=TRUE), 
+                  VARIANZA= var(., na.rm = TRUE),
+                  CANTIDAD= n()
+                )
+  ) %>% View
+
+```
+
+Se tiene que la varianza  y media màs alta se presentan en las variables Transacción, cajero y  ubicación 
+
+#####Análisis ANOVA
+
+```{r}
+library(stats)
+fit1=lm(X~Y)
+fit2=lm(X~Z)
+fit3=lm(X~C)
+anova(fit1)
+anova(fit2)
+anova(fit3)
+```
+#####Análisis de varianza ANOVA
+
+```{r}
+anova1 <- aov(data_banco$Tiempo_Servicio_seg ~ data_banco$Sucursal)
+anova2 <- aov(data_banco$Tiempo_Servicio_seg ~ data_banco$Monto)
+anova3 <- aov(data_banco$Tiempo_Servicio_seg ~ data_banco$Edad)
+anova4 <- aov(data_banco$Tiempo_Servicio_seg ~ data_banco$Año.Ingreso)
+summary(anova1)
+plot(anova1)
+plot(anova2)
+plot(anova3)
+anova1
+anova2
+anova3
+```
+
+#Ejercicio 2
+## Existe diferencia en las medias del tiempo en minutos de una transacción entre el sexo del cajero, entre tener y no tener el nuevo sistema ó el sector donde está la sucursal para tener
+
+###Análisis por Sexo del cajero 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=TRUE}
+data_banco %>% 
+  rename(TiempoServicioMin= Tiempo_Servicio_Min) %>% 
+  group_by(Sexo) %>% 
+  summarise_at( vars(TiempoServicioMin), 
+                funs (
+                  Media= mean(., na.rm=TRUE),
+                  Cantidad= n()
+                )) %>% 
+  gather(-c("Sexo"),key="Var",value= valor)%>% #reunir
+  separate("Var", c("Variable","Medida"), sep = "_") %>% 
+  spread(Medida,value= valor) #separar 
+```
+
+De los resultados obtenidos la diferencia entre el tiempo por sexo del cajero es de 0.22 min siendo el Sexo Masculino más eficiente en tiempo por transacción. Pero debemos recalcar que existen más mujeres realizando transacciones que hombres por loq ue el tiempo de mujeres un muy bueno en relación al de hombres  
+
+###Análisis por Ubicación
+```{r echo=FALSE}
+data_banco %>% 
+  rename(TiempoServicioMin= Tiempo_Servicio_Min) %>% 
+  group_by(Ubicación) %>% 
+  summarise_at( vars(TiempoServicioMin), 
+                funs (
+                  Media= mean(., na.rm=TRUE),
+                  Cantidad= n()
+                )) %>% 
+  gather(-c("Ubicación"),key="Var",value= valor)%>% #reunir
+  separate("Var", c("Variable","Medida"), sep = "_") %>% 
+  spread(Medida,value= valor) #separar 
+```
+
+Por otra parte la sucursal Vía Daule resulta ser la más eficiente en tiempo de servicio, pero debemos ver que las transacciones realizadas en esta sucursal son muy pocas a comparación del resto de Sucursales. Así la sucursal Centro que tiene 12044 transacciones varia en 1.4 min respecto a la sucursal Vía Daule 
+
+###Análisis por Nuevo_Sistema
+```{r}
+data_banco %>% 
+  rename(TiempoServicioMin= Tiempo_Servicio_Min) %>% 
+  group_by(Nuevo_Sistema) %>% 
+  summarise_at( vars(TiempoServicioMin), 
+                funs (
+                  Media= mean(., na.rm=TRUE),
+                  Cantidad= n()
+                )) %>% 
+  gather(-c("Nuevo_Sistema"),key="Var",value= valor)%>% #reunir
+  separate("Var", c("Variable","Medida"), sep = "_") %>% 
+  spread(Medida,value= valor) #separar 
+```
+
+Es evidente que el nuevo sistema predomina en la mayoría de sucursales del Banco, por lo que el tiempo de servicio varia en 1.43 min en relación al del nuevo servicio.
+
+#Ejercicio 3
+##Realice un perfilamiento por sucursal. Con el objetivo de determinar por que una sucursal es mejor que otra según la evaluación del cliente.
+```{r echo=FALSE}
+data <- data_banco
+data <- data %>% mutate(
+  Peso=case_when(Satisfaccion=="Muy Bueno"~5,
+                 Satisfaccion=="Bueno"~4,
+                 Satisfaccion=="Regular"~3,
+                 Satisfaccion=="Malo"~2,
+                 Satisfaccion=="Muy Malo"~1)
+)%>% group_by(Ubicación,Satisfaccion) %>% summarise(Total=n(), Peso=sum(Peso))
+data <- data %>% group_by(Ubicación) %>% summarise(Indicador=sum(Peso)/sum(Total))
+data<-arrange(data,Indicador)
+data
+```
+
+Gracias al Indicador de Satisfacción la Sucursal Centro Obtuvo una mejor calificación, pero debemos tomar en cuenta que por el literal anterior que en esta sucursal se realizan 12044 transacciones de 24299 por lo que es claro que tendrá más calificaciones de satisfacción que el resto de sucursales.
+
+#Ejercicio 4
+##Realice una función que permita realizar estadística descriptiva ingresando el código de la sucursal, transacción y cajero. Además, determinar los casos donde la cantidad de atípicos es máxima el 1%.
+
+```{r echo=TRUE}
+  Atipico <- function(x){
+  N <- length(x)
+  UM <- sum(is.na(x))
+  n <- N - UM
+  x <- x[!(is.na(x) > 0)]
+  LQ1 <- (n + 1)/4
+  LQ3 <- (3 * (n + 1))/4
+  Sort <- sort(x)
+  V1 <- floor(LQ1)
+  V2 <- floor(LQ3)
+  V3 <- V1 + 1
+  V4 <- V2 + 1
+  Q1 <- round(Sort[V1] + (LQ1 - V1) * (Sort[V3] - Sort[V1]),
+              3)
+  Q3 <- round(Sort[V2] + (LQ3 - V2) * (Sort[V4] - Sort[V2]),
+              3)
+  IQR <- round(Q3 - Q1, 3)
+  l.out <- x[x < (Q1 - 1.5 * IQR)]
+  r.out <- x[x > (Q3 + 1.5 * IQR)]
+  outliers <- c(l.out, r.out)
+  pos <- which(x %in% outliers)
+  return(pos)
+}
+```
+
+
+
+#Ejercicio 5
+## Realizar una evaluación de los cajeros que considere el sexo, el tiempo de servicio, tiempo de experiencia, número de transacciones, monto procesado y evaluación del cliente.
+
+```{r include=FALSE}
+library(lubridate)
+Fecha<-ymd(Sys.Date())
+Fecha
+AAAA<-year(Fecha)
+data_banco<-data_banco %>% mutate(Experiencia= AAAA-Año.Ingreso)
+str(data_banco)
+data1<-data_banco %>% mutate(
+  Peso=case_when(
+    Satisfaccion== "Muy Bueno" ~ 5,
+    Satisfaccion== "Bueno" ~ 4,
+    Satisfaccion=="Regular" ~ 3,
+    Satisfaccion=="Malo" ~ 2,
+    Satisfaccion=="Muy Malo" ~ 1
+  ))  %>% group_by(Cajero,Sexo,Experiencia,Año.Ingreso) %>% 
+  summarise(Media_TiempoServicioMin=mean(Tiempo_Servicio_Min),
+  Total_Monto=sum(Monto),                                                           
+  Numero_Transacciones=n(),Satisfacción =sum(Peso)/n()) %>%arrange(as.numeric(Cajero))
+
+```
+```{r echo=FALSE}
+library(kableExtra)
+data1 %>%kable() %>% kable_styling()
+```
+
